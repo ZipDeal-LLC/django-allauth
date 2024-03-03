@@ -11,35 +11,29 @@ from allauth.core.exceptions import ImmediateHttpResponse
 @sync_and_async_middleware
 def AccountMiddleware(get_response):
     is_async = iscoroutinefunction(get_response)
-    # printc(get_response)
-    # printc(is_async)
     if is_async:
-
         async def middleware(request):
             with context.request_context(request):
                 try:
                     response = await get_response(request)
-                    # printc(response, fg="green")
-
                     if _should_check_dangling_login(request, response):
                         await _acheck_dangling_login(request)
                     return response
                 except ImmediateHttpResponse as e:
                     return e.response
-
     else:
-
         def middleware(request):
             with context.request_context(request):
                 try:
                     response = get_response(request)
-                    # printc(response, fg="red")
+
+                    #  AttributeError: 'coroutine' object has no attribute 'headers'
+                    #  RuntimeWarning: coroutine '_asgi_middleware_mixin_factory.<locals>.SentryASGIMixin.__acall__' was never awaited
+                    # needs inspect to determine the response
                     if iscoroutinefunction(response) or inspect.isasyncgenfunction(
                         response
                     ):
-                        # printc("awaiting", fg="blue")
-
-                        response = async_to_sync(await_response)
+                        response = async_to_sync(await_response)(response)
 
                     if _should_check_dangling_login(request, response):
                         _check_dangling_login(request)
