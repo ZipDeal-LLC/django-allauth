@@ -1,7 +1,8 @@
+import inspect
+
+from asgiref.sync import iscoroutinefunction, sync_to_async, async_to_sync
 from django.conf import settings
 from django.utils.decorators import sync_and_async_middleware
-
-from asgiref.sync import iscoroutinefunction, sync_to_async
 
 from allauth.core import context
 from allauth.core.exceptions import ImmediateHttpResponse
@@ -9,36 +10,51 @@ from allauth.core.exceptions import ImmediateHttpResponse
 
 @sync_and_async_middleware
 def AccountMiddleware(get_response):
-    if iscoroutinefunction(get_response):
+    is_async = iscoroutinefunction(get_response)
+    # printc(get_response)
+    # printc(is_async)
+    if is_async:
 
         async def middleware(request):
             with context.request_context(request):
-                response = await get_response(request)
-                if _should_check_dangling_login(request, response):
-                    await _acheck_dangling_login(request)
-                return response
+                try:
+                    response = await get_response(request)
+                    # printc(response, fg="green")
+
+                    if _should_check_dangling_login(request, response):
+                        await _acheck_dangling_login(request)
+                    return response
+                except ImmediateHttpResponse as e:
+                    return e.response
 
     else:
 
         def middleware(request):
             with context.request_context(request):
-                response = get_response(request)
-                if _should_check_dangling_login(request, response):
-                    _check_dangling_login(request)
-                return response
+                try:
+                    response = get_response(request)
+                    # printc(response, fg="red")
+                    if iscoroutinefunction(response) or inspect.isasyncgenfunction(
+                        response
+                    ):
+                        # printc("awaiting", fg="blue")
 
-    def process_exception(request, exception):
-        if isinstance(exception, ImmediateHttpResponse):
-            return exception.response
+                        response = async_to_sync(await_response)
 
-    middleware.process_exception = process_exception
+                    if _should_check_dangling_login(request, response):
+                        _check_dangling_login(request)
+                    return response
+                except ImmediateHttpResponse as e:
+                    return e.response
+
     return middleware
 
 
+async def await_response(response):
+    return await response
+
+
 def _should_check_dangling_login(request, response):
-    sec_fetch_dest = request.headers.get("sec-fetch-dest")
-    if sec_fetch_dest and sec_fetch_dest != "document":
-        return False
     content_type = response.headers.get("content-type")
     if content_type:
         content_type = content_type.partition(";")[0]
