@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 
 from asgiref.sync import iscoroutinefunction, sync_to_async, async_to_sync
@@ -6,12 +7,20 @@ from django.utils.decorators import sync_and_async_middleware
 
 from allauth.core import context
 from allauth.core.exceptions import ImmediateHttpResponse
+import environ
+
+env = environ.Env()
+ZIPDEAL_ENV = env.str("ZIPDEAL_ENV", "")
 
 
 @sync_and_async_middleware
 def AccountMiddleware(get_response):
     is_async = iscoroutinefunction(get_response)
-    if is_async:
+    #  AttributeError: 'coroutine' object has no attribute 'headers'
+    #  RuntimeWarning: coroutine '_asgi_middleware_mixin_factory.<locals>.SentryASGIMixin.__acall__' was never awaited
+    # needs inspect to determine the response
+    if is_async or ZIPDEAL_ENV != "devs":
+
         async def middleware(request):
             with context.request_context(request):
                 try:
@@ -22,19 +31,11 @@ def AccountMiddleware(get_response):
                 except ImmediateHttpResponse as e:
                     return e.response
     else:
+
         def middleware(request):
             with context.request_context(request):
                 try:
                     response = get_response(request)
-
-                    #  AttributeError: 'coroutine' object has no attribute 'headers'
-                    #  RuntimeWarning: coroutine '_asgi_middleware_mixin_factory.<locals>.SentryASGIMixin.__acall__' was never awaited
-                    # needs inspect to determine the response
-                    if iscoroutinefunction(response) or inspect.isasyncgenfunction(
-                        response
-                    ):
-                        response = async_to_sync(await_response)(response)
-
                     if _should_check_dangling_login(request, response):
                         _check_dangling_login(request)
                     return response
