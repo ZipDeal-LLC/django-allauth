@@ -12,7 +12,6 @@ import environ
 env = environ.Env()
 ZIPDEAL_ENV = env.str("ZIPDEAL_ENV", "")
 
-
 @sync_and_async_middleware
 def AccountMiddleware(get_response):
     is_async = iscoroutinefunction(get_response)
